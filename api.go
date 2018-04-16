@@ -47,13 +47,11 @@ func newRouter(c *Context) *mux.Router {
 }
 
 func alertPlay(c *Context, w http.ResponseWriter, r *http.Request) {
-	// TODO: should we try to re-play if it's already playing?
-	// Maybe yes, if a different song is requested
-	resp := make(chan interface{})
+	respChan := make(chan interface{})
 	go func() {
-		c.cmdChan <- &Msg{"alert", resp}
+		c.cmdChan <- &Msg{"alert", nil, respChan}
 	}()
-	if err := <-resp; err != nil {
+	if err := <-respChan; err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -63,11 +61,11 @@ func alertPlay(c *Context, w http.ResponseWriter, r *http.Request) {
 }
 
 func alertSilence(c *Context, w http.ResponseWriter, r *http.Request) {
-	resp := make(chan interface{})
+	respChan := make(chan interface{})
 	go func() {
-		c.cmdChan <- &Msg{"silence", resp}
+		c.cmdChan <- &Msg{"silence", nil, respChan}
 	}()
-	if err := <-resp; err != nil {
+	if err := <-respChan; err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 		w.WriteHeader(http.StatusInternalServerError)
 		return

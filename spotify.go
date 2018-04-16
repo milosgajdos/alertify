@@ -184,8 +184,8 @@ func (s *SpotifyClient) SetDevice(deviceID, deviceName string) error {
 	return fmt.Errorf("No active Spotify devices found")
 }
 
-// playAlertSong plays song on Spotify specified by songURI
-func (s *SpotifyClient) playAlertSong(songURI string) error {
+// PlaySong plays Spotify song passed in as songURI
+func (s *SpotifyClient) PlaySong(songURI string) error {
 	s.Lock()
 	defer s.Unlock()
 	// if empty, play default song: car crash
@@ -215,16 +215,6 @@ func (s *SpotifyClient) playAlertSong(songURI string) error {
 	log.Printf("Attempting to play: %s on device: %s - %s", trackName, s.device.ID, s.device.Name)
 
 	return s.PlayOpt(opts)
-}
-
-// Play plays default Spotify song
-func (s *SpotifyClient) Play() error {
-	return s.playAlertSong("")
-}
-
-// PlaySong plays Spotify song passed in as songURI
-func (s *SpotifyClient) PlaySong(songURI string) error {
-	return s.playAlertSong(songURI)
 }
 
 // Pause pauses active playback on a currently active Spotify device

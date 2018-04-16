@@ -18,8 +18,8 @@ type Bot struct {
 	slck *SlackClient
 	// api is HTTP API service
 	api *API
-	// songURI is spotify alert song URI
-	songURI string
+	// alertSongURI is Spotify song URI
+	alertSongURI string
 	// cmdChan is Bot command control channel
 	cmdChan chan *Msg
 	// doneChan stops Bot command listener
@@ -36,8 +36,9 @@ type Config struct {
 
 // Msg is a Bot message that allows to control aleritfy bot
 type Msg struct {
-	Cmd  string
-	resp chan interface{}
+	Cmd      string
+	Data     interface{}
+	respChan chan interface{}
 }
 
 // NewBot creates new alertify bot and returns it
@@ -62,18 +63,27 @@ func NewBot(c *Config) (*Bot, error) {
 	}
 
 	return &Bot{
-		sptf:     spotifyClient,
-		slck:     slackClient,
-		songURI:  c.Spotify.SongURI,
-		api:      api,
-		cmdChan:  cmdChan,
-		doneChan: doneChan,
+		sptf:         spotifyClient,
+		slck:         slackClient,
+		api:          api,
+		alertSongURI: c.Spotify.SongURI,
+		cmdChan:      cmdChan,
+		doneChan:     doneChan,
 	}, nil
 }
 
 // Alert plays a Spotify song
-func (b *Bot) Alert() error {
-	return b.sptf.PlaySong(b.songURI)
+func (b *Bot) Alert(msg *Msg) error {
+	if msg.Data == nil {
+		return b.sptf.PlaySong(b.alertSongURI)
+	}
+
+	songURI, ok := msg.Data.(string)
+	if !ok {
+		return fmt.Errorf("Invalid Spotify SongURI: %s", msg.Data)
+	}
+
+	return b.sptf.PlaySong(songURI)
 }
 
 // Silence pauses Spotify playback
@@ -85,11 +95,11 @@ func (b *Bot) Silence() error {
 func (b *Bot) runCmd(msg *Msg) {
 	switch msg.Cmd {
 	case "alert":
-		msg.resp <- b.Alert()
+		msg.respChan <- b.Alert(msg)
 	case "silence":
-		msg.resp <- b.Silence()
+		msg.respChan <- b.Silence()
 	default:
-		msg.resp <- fmt.Errorf("Invalid command")
+		msg.respChan <- fmt.Errorf("Invalid command")
 	}
 }
 

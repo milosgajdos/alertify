@@ -108,7 +108,7 @@ func (s *SlackClient) WatchAndAlert(cmdChan chan *Msg) error {
 		case <-alertChan:
 			log.Printf("Slack alert detected")
 			// send message to alertify bot to play song
-			go func() { cmdChan <- &Msg{"alert", respChan} }()
+			go func() { cmdChan <- &Msg{"alert", nil, respChan} }()
 			if err := <-respChan; err != nil {
 				log.Printf("Could not play song: %v", err.(error))
 			}
