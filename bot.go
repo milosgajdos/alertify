@@ -18,6 +18,8 @@ type Bot struct {
 	slck *SlackClient
 	// api is HTTP API service
 	api *API
+	// songURI is spotify alert song URI
+	songURI string
 	// cmdChan is Bot command control channel
 	cmdChan chan *Msg
 	// doneChan stops Bot command listener
@@ -62,6 +64,7 @@ func NewBot(c *Config) (*Bot, error) {
 	return &Bot{
 		sptf:     spotifyClient,
 		slck:     slackClient,
+		songURI:  c.Spotify.SongURI,
 		api:      api,
 		cmdChan:  cmdChan,
 		doneChan: doneChan,
@@ -70,7 +73,7 @@ func NewBot(c *Config) (*Bot, error) {
 
 // Alert plays a Spotify song
 func (b *Bot) Alert() error {
-	return b.sptf.Play()
+	return b.sptf.PlaySong(b.songURI)
 }
 
 // Silence pauses Spotify playback

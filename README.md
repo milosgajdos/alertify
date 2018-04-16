@@ -103,12 +103,41 @@ Trigger the alert playback:
 $ curl -X POST localhost:8080/alert/play
 ```
 
+The song should start playing on either the explicitly Spotify device or on the firs available device:
+
+```
+[ alertify ] Starting HTTP API service
+[ alertify ] POST	/alert/play
+[ alertify ] Received command: alert
+[ alertify ] Attempting to play: Take Me Home, Country Roads on device: xxxxxxxxx - ceres
+```
+
 Silence the alert song:
 
 ```
 $ curl -X POST localhost:8080/alert/silence
 ```
 
+The song should now be paused:
+
+```
+[ alertify ] POST	/alert/silence
+[ alertify ] Received command: silence
+[ alertify ] Attempting to silence alert  playback on device: xxxxxxxxx - ceres
+```
+
+## Slack messages
+
+By default `alertify` listens to all Slack messages in channel called `devops-production` -- you can change the channel name via `-alert-channel` cli option. `alertify` will play song on Spotify once it detects a message sent by `production` (configurable via `-alert-bot`)  which contains `alert` in the message (configurable via `-alert-msg`).
+
+Once `alertify` detects a message that matches regexp passed in to `-alert-msg` cli parameter it will start playing the song:
+
+```
+[ alertify ] Slack alert detected
+[ alertify ] Received command: alert
+[ alertify ] Attempting to play: Take Me Home, Country Roads on device: xxxxxxxxx - ceres
+```
+
 # Contributing
 
-**YES PLEASE!!!**
+**IF YOU HAVE TIME, THEN YES PLEASE!!!**

@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/zmb3/spotify"
@@ -58,10 +59,8 @@ func (a *SpotifyAuth) URL() string {
 type SpotifyClient struct {
 	// Spotify client
 	*spotify.Client
-	// deviceID is Spotify device ID
-	deviceID *spotify.ID
-	// songURi is Spotify song URI
-	songURI spotify.URI
+	// device is Spotify player device
+	device *spotify.PlayerDevice
 	// mutex
 	*sync.Mutex
 }
@@ -114,7 +113,7 @@ func NewSpotifyClient(c *SpotifyConfig) (*SpotifyClient, error) {
 		errChan <- server.Serve(listener)
 	}()
 
-	fmt.Println("Log in to Spotify by visiting the following page in your browser:", auth.URL())
+	fmt.Println("Log in to Spotify by visiting the following URL in your browser:", auth.URL())
 
 	var client *spotify.Client
 	// wait for auth to complete
@@ -122,81 +121,98 @@ func NewSpotifyClient(c *SpotifyConfig) (*SpotifyClient, error) {
 	case client = <-clientChan:
 		listener.Close()
 	case err = <-errChan:
-		log.Printf("Error: %s", err)
+		log.Printf("Error stopping Spotify authenticator: %s", err)
 	}
 	wg.Wait()
 
+	// configure Spotify player device
 	deviceID := spotify.ID(c.DeviceID)
-	_client := &SpotifyClient{client, &deviceID, spotify.URI(c.SongURI), &sync.Mutex{}}
-	if err := _client.SetDeviceID(c.DeviceID, c.DeviceName); err != nil {
+	device := &spotify.PlayerDevice{ID: deviceID}
+	_client := &SpotifyClient{client, device, &sync.Mutex{}}
+	if err := _client.SetDevice(c.DeviceID, c.DeviceName); err != nil {
 		return nil, err
 	}
 
 	return _client, err
 }
 
-// DeviceID returns Spotify device ID
-func (s *SpotifyClient) DeviceID() *spotify.ID {
-	return s.deviceID
+// Device returns Spotify active playback device
+func (s *SpotifyClient) Device() *spotify.PlayerDevice {
+	return s.device
 }
 
-// SongURI returns Spotify Song URI
-func (s *SpotifyClient) SongURI() spotify.URI {
-	return s.songURI
-}
-
-// SetDeviceID allows to set Spotify device ID on which you can play songs
-// If deviceID is smpty string, it searches for device ID of device specified by deviceName
+// SetDevice allows to set Spotify player device on which you can play alert song
+// If deviceID is empty string, it searches for device ID of the device specified by deviceName
 // If both deviceID and deviceName are empty Spotify client will use the first active device it finds
-func (s *SpotifyClient) SetDeviceID(deviceID, deviceName string) error {
+func (s *SpotifyClient) SetDevice(deviceID, deviceName string) error {
 	// prevent multiple client device modifications
 	s.Lock()
 	defer s.Unlock()
 
-	if deviceID != "" {
-		_deviceID := spotify.ID(deviceID)
-		s.deviceID = &_deviceID
-		return nil
-	}
-	// get all Spotify devices
+	// get all available Spotify player devices
 	devices, err := s.PlayerDevices()
 	if err != nil {
 		return err
 	}
+
 	var activeDevices []spotify.PlayerDevice
 	// loop over available devices
 	for _, device := range devices {
-		if deviceName != "" {
-			if device.Name == deviceName {
-				s.deviceID = &device.ID
+		if !device.Restricted {
+			// Search by device ID
+			if deviceID == device.ID.String() {
+				s.device.ID = device.ID
+				s.device.Name = device.Name
 				return nil
 			}
-		}
-		if !device.Restricted {
+			// search by device Name
+			if device.Name == deviceName {
+				s.device.ID = device.ID
+				s.device.Name = device.Name
+				return nil
+			}
 			activeDevices = append(activeDevices, device)
 		}
 	}
 
 	if len(activeDevices) != 0 {
-		s.deviceID = &activeDevices[0].ID
+		s.device.ID = activeDevices[0].ID
+		s.device.Name = activeDevices[0].Name
 		return nil
 	}
 
-	return fmt.Errorf("No active device found")
+	return fmt.Errorf("No active Spotify devices found")
 }
 
-// playAlertSong plays song specified by songURI
+// playAlertSong plays song on Spotify specified by songURI
 func (s *SpotifyClient) playAlertSong(songURI string) error {
 	s.Lock()
 	defer s.Unlock()
-	if songURI != "" {
-		s.songURI = spotify.URI(songURI)
+	// if empty, play default song: car crash
+	if songURI == "" {
+		songURI = "spotify:track:7yTIKQzqRQfXDKKiPw3GJY"
+	}
+	// set playback options
+	opts := &spotify.PlayOptions{
+		DeviceID: &s.device.ID,
+		URIs:     []spotify.URI{spotify.URI(songURI)},
 	}
 
-	opts := &spotify.PlayOptions{
-		DeviceID: s.DeviceID(),
-		URIs:     []spotify.URI{s.songURI},
+	var trackName string
+	trackInfo := strings.Split(songURI, ":")
+	if len(trackInfo) != 3 {
+		log.Printf("Could not parse Spotify ID from %s", songURI)
+	} else {
+		track, err := s.GetTrack(spotify.ID(trackInfo[2]))
+		if err != nil {
+			log.Printf("Failed to get %s track name: %s", songURI, err)
+			trackName = "Unknown"
+		} else {
+			trackName = track.Name
+		}
 	}
+
+	log.Printf("Attempting to play: %s on device: %s - %s", trackName, s.device.ID, s.device.Name)
 
 	return s.PlayOpt(opts)
 }
@@ -206,16 +222,19 @@ func (s *SpotifyClient) Play() error {
 	return s.playAlertSong("")
 }
 
-// PlaySong plays Spotify song passed in via config parameter
+// PlaySong plays Spotify song passed in as songURI
 func (s *SpotifyClient) PlaySong(songURI string) error {
 	return s.playAlertSong(songURI)
 }
 
-// Pause pauses active playback ore returns error if the playback can't be paused
+// Pause pauses active playback on a currently active Spotify device
+// It returns error if the playback can't be paused
 func (s *SpotifyClient) Pause() error {
 	opts := &spotify.PlayOptions{
-		DeviceID: s.DeviceID(),
+		DeviceID: &s.device.ID,
 	}
+
+	log.Printf("Attempting to silence alert  playback on device: %s - %s", s.device.ID, s.device.Name)
 
 	return s.PauseOpt(opts)
 }
