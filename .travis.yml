@@ -1,0 +1,20 @@
+language: go
+go:
+  - "1.8"
+  - "1.9"
+  - "1.10"
+
+before_install:
+  - go get github.com/stretchr/testify/assert
+  - go get github.com/golang/lint/golint
+
+install:
+  - go get -d -v ./... && go build -v ./...
+
+script:
+  - make dep
+  - make check
+  - make build
+
+after_success:
+  - bash <(curl -s https://codecov.io/bash)

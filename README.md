@@ -2,6 +2,7 @@
 
 [![GoDoc](https://godoc.org/github.com/milosgajdos83/alertify?status.svg)](https://godoc.org/github.com/milosgajdos83/alertify)
 [![License](https://img.shields.io/:license-apache-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Travis CI](https://travis-ci.org/milosgajdos83/alertify.svg?branch=master)](https://travis-ci.org/milosgajdos83/alertify)
 
 **THIS IS JUST A POC WRITEN FOR LOLZ**
 
