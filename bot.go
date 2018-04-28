@@ -1,4 +1,4 @@
-package main
+package alertify
 
 import (
 	"fmt"
@@ -10,10 +10,10 @@ import (
 type Msg struct {
 	// Cmd is specifies command name
 	Cmd string
-	// Data allows to send data in the message
+	// Data allows to attach arbitrary data to the message
 	Data interface{}
-	// respChan is used to send response back to sender
-	respChan chan interface{}
+	// Resp is a channel used to send response back to monitor
+	Resp chan interface{}
 }
 
 // Bot plays spotify songs when requested
@@ -28,6 +28,8 @@ type Bot struct {
 	msgChan chan *Msg
 	// closeMsgChan stops Bot message listener
 	closeMsgChan chan struct{}
+	// monitors are Bot monitors
+	monitors []Monitor
 	// isRunning checks if bot is running
 	isRunning bool
 	// mutex
@@ -59,12 +61,16 @@ func NewBot(c *BotConfig) (*Bot, error) {
 		return nil, err
 	}
 
+	// monitors keeps a list of registered monitors
+	monitors := make([]Monitor, 0)
+
 	return &Bot{
 		spotify:      spotifyClient,
 		api:          api,
 		songURI:      c.Spotify.SongURI,
 		msgChan:      msgChan,
 		closeMsgChan: closeMsgChan,
+		monitors:     monitors,
 		isRunning:    false,
 		Mutex:        &sync.Mutex{},
 	}, nil
@@ -83,9 +89,12 @@ func (b *Bot) Silence() error {
 	return b.spotify.Pause()
 }
 
-// MsgChan returns Bot message channel
-func (b *Bot) MsgChan() chan<- *Msg {
-	return b.msgChan
+// RegisterMonitor registers remote monitor
+func (b *Bot) RegisterMonitor(monitors ...Monitor) error {
+	// add all monitors to bot list
+	b.monitors = append(b.monitors, monitors...)
+
+	return nil
 }
 
 // processMsg processes bot message and runs bot command
@@ -100,20 +109,21 @@ func (b *Bot) processMsg(msg *Msg) {
 				songURI = b.songURI
 			}
 		}
-		msg.respChan <- b.Alert(songURI)
+		msg.Resp <- b.Alert(songURI)
 	case "silence":
-		msg.respChan <- b.Silence()
+		msg.Resp <- b.Silence()
 	default:
-		msg.respChan <- fmt.Errorf("Invalid command")
+		msg.Resp <- fmt.Errorf("Invalid command")
 	}
 }
 
 // ListenAndAlert starts Bot message listener and plays Spotify song when it receives alert message
 // This is a blocking function call and therefore should be run in a dedicated goroutine
 func (b *Bot) ListenAndAlert() error {
+
 	var wg sync.WaitGroup
 	// Create error channel
-	errChan := make(chan error, 2)
+	errChan := make(chan error, len(b.monitors)+1)
 
 	// Start Bot message listener
 	wg.Add(1)
@@ -125,7 +135,7 @@ func (b *Bot) ListenAndAlert() error {
 				log.Printf("Received message: %s", msg.Cmd)
 				b.processMsg(msg)
 			case <-b.closeMsgChan:
-				log.Printf("Stopping bot message listener")
+				log.Printf("Stopping message listener")
 				errChan <- nil
 				return
 			}
@@ -136,9 +146,20 @@ func (b *Bot) ListenAndAlert() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Printf("Starting Bot HTTP API service")
+		log.Printf("Starting HTTP API service")
 		errChan <- b.api.ListenAndServe()
 	}()
+
+	// Start all remote monitors
+	for _, mon := range b.monitors {
+		wg.Add(1)
+		go func(m Monitor) {
+			defer wg.Done()
+			log.Printf("Starting %s", m)
+			errChan <- m.MonitorAndAlert(b.msgChan)
+			log.Printf("%s stopped", m)
+		}(mon)
+	}
 
 	// set bot status to running
 	b.Lock()
@@ -148,10 +169,20 @@ func (b *Bot) ListenAndAlert() error {
 	// wait for error
 	err := <-errChan
 
-	log.Printf("Bot HTTP API service shutting down")
+	log.Printf("HTTP API service shutting down")
 	b.api.l.Close()
-	log.Printf("Bot message listener shutting down")
+	log.Printf("HTTP API service stopped")
+
+	log.Printf("Message listener shutting down")
 	b.Stop()
+	log.Printf("Message listener stopped")
+
+	// Stop all remote monitors
+	for _, m := range b.monitors {
+		log.Printf("Shutting down %s", m)
+		m.Stop()
+		log.Printf("%s stopped", m)
+	}
 	wg.Wait()
 
 	return err

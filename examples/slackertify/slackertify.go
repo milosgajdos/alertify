@@ -8,11 +8,14 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+
+	"github.com/milosgajdos83/alertify"
+	"github.com/milosgajdos83/alertify/monitor"
 )
 
 const (
 	// cliname is command line interface name
-	cliname = "alertify"
+	cliname = "slackertify"
 )
 
 var (
@@ -33,7 +36,7 @@ var (
 )
 
 func init() {
-	flag.StringVar(&redirectURI, "redirect-uri", "http://localhost:8080/callback", "OAuth app redirect URI set in Spotify API console")
+	flag.StringVar(&redirectURI, "redirect-uri", "http://localhost:8080/callback", "Spotify API redirect URI")
 	flag.StringVar(&deviceName, "device-name", "", "Spotify device name as recognised by Spotify API")
 	flag.StringVar(&deviceID, "device-id", "", "Spotify device ID as recognised by Spotify API")
 	flag.StringVar(&songURI, "song-uri", "spotify:track:2xYlyywNgefLCRDG8hlxZq", "Spotify song URI")
@@ -48,9 +51,9 @@ func init() {
 // Config contains configuration parameters
 type Config struct {
 	// Bot configures alertify bot
-	Bot *BotConfig
-	// Slack configures Slack API client
-	Slack *SlackConfig
+	Bot *alertify.BotConfig
+	// Slack configures Slack message monitor
+	Slack *monitor.SlackConfig
 }
 
 func parseCliFlags() (*Config, error) {
@@ -73,8 +76,8 @@ func parseCliFlags() (*Config, error) {
 	}
 
 	return &Config{
-		Bot: &BotConfig{
-			Spotify: &SpotifyConfig{
+		Bot: &alertify.BotConfig{
+			Spotify: &alertify.SpotifyConfig{
 				ClientID:     spotifyID,
 				ClientSecret: spotifySecret,
 				RedirectURI:  redirectURI,
@@ -83,7 +86,7 @@ func parseCliFlags() (*Config, error) {
 				SongURI:      songURI,
 			},
 		},
-		Slack: &SlackConfig{
+		Slack: &monitor.SlackConfig{
 			APIKey:  slackAPIKey,
 			Channel: slackChannel,
 			User:    slackUser,
@@ -92,30 +95,26 @@ func parseCliFlags() (*Config, error) {
 	}, nil
 }
 
-func main() {
-	var wg sync.WaitGroup
-
-	// read config
-	cfg, err := parseCliFlags()
-	if err != nil {
-		log.Printf("Error parsing cli flags: %v", err)
-		os.Exit(1)
-	}
-
-	// create bot
-	bot, err := NewBot(cfg.Bot)
-	if err != nil {
-		log.Printf("Error creating bot: %v", err)
-		os.Exit(1)
-	}
-
+// registerSignals registers signal notification channel
+func registerSignals(sig ...os.Signal) <-chan os.Signal {
 	// Signal handler to stop the bot when termination signal is received
-	sigc := make(chan os.Signal, 1)
+	sigChan := make(chan os.Signal, 1)
 	// register signal handler
-	signal.Notify(sigc, os.Interrupt, os.Kill, syscall.SIGTERM)
-	// Create error channel
-	errChan := make(chan error, 2)
+	signal.Notify(sigChan, sig...)
 
+	return sigChan
+}
+
+// listenAndAlert starts bot and all monitors
+func listenAndAlert(bot *alertify.Bot) error {
+	// Create error channel
+	errChan := make(chan error, 1)
+
+	// OS signal notification channel
+	sigChan := registerSignals(os.Interrupt, os.Kill, syscall.SIGTERM)
+
+	var wg sync.WaitGroup
+	// start bot goroutine
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -124,37 +123,51 @@ func main() {
 		log.Printf("Bot message listener stopped")
 	}()
 
-	// Create Slack client
-	slack, err := NewSlackListener(cfg.Slack)
-	if err != nil {
-		log.Printf("Error creating slack listener: %s", err)
-		os.Exit(1)
-	}
-
-	// start Slack API message listener
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		log.Printf("Starting Slack API message listener")
-		errChan <- slack.ListenAndAlert(bot.MsgChan())
-		log.Printf("Slack message listener stopped")
-	}()
-
-	var e error
+	var err error
 	select {
-	case sig := <-sigc:
-		log.Printf("Shutting down -> got signal: %s", sig)
-	case e = <-errChan:
+	case sig := <-sigChan:
+		log.Printf("Got signal: %s: Shutting down", sig)
+	case err = <-errChan:
 	}
 
 	// stop all listeners
 	bot.Stop()
-	slack.Stop()
 	wg.Wait()
 
-	// if we are shutting down due to an error, exit with non-zero status
+	return err
+}
+
+func main() {
+	// read config
+	cfg, err := parseCliFlags()
 	if err != nil {
-		log.Printf("Error: %s", e)
+		log.Printf("Error parsing cli flags: %v", err)
+		os.Exit(1)
+	}
+
+	// create bot
+	bot, err := alertify.NewBot(cfg.Bot)
+	if err != nil {
+		log.Printf("Error creating bot: %v", err)
+		os.Exit(1)
+	}
+
+	// Create Slack monitor
+	slack, err := monitor.NewSlackMonitor(cfg.Slack)
+	if err != nil {
+		log.Printf("Error creating slack monitor: %s", err)
+		os.Exit(1)
+	}
+
+	// register slack message monitor
+	if err := bot.RegisterMonitor(slack); err != nil {
+		log.Printf("Error registering %s: %s", slack, err)
+		os.Exit(1)
+	}
+
+	// start alertify bot
+	if err := listenAndAlert(bot); err != nil {
+		log.Printf("Error: %s", err)
 		os.Exit(1)
 	}
 }

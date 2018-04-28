@@ -1,4 +1,4 @@
-package main
+package monitor
 
 import (
 	"fmt"
@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/milosgajdos83/alertify"
 	"github.com/nlopes/slack"
 )
 
@@ -22,8 +23,8 @@ type SlackConfig struct {
 	Msg string
 }
 
-// SlackClient is Slack API client
-type SlackClient struct {
+// SlackMonitor is Slack API client which monitors messages
+type SlackMonitor struct {
 	// embedding Slack client
 	*slack.Client
 	// rtm is Slack RTM client
@@ -42,8 +43,8 @@ type SlackClient struct {
 	*sync.Mutex
 }
 
-// NewSlackListener creates new Slack message listener.
-func NewSlackListener(c *SlackConfig) (*SlackClient, error) {
+// NewSlackMonitor creates new Slack message monitor
+func NewSlackMonitor(c *SlackConfig) (*SlackMonitor, error) {
 	api := slack.New(c.APIKey)
 	rtm := api.NewRTM()
 	// compile message regexp
@@ -56,21 +57,26 @@ func NewSlackListener(c *SlackConfig) (*SlackClient, error) {
 	// mutex
 	m := &sync.Mutex{}
 
-	return &SlackClient{api, rtm, c.User, c.Channel, msg, doneChan, false, m}, nil
+	return &SlackMonitor{api, rtm, c.User, c.Channel, msg, doneChan, false, m}, nil
+}
+
+// String returns the name of the monitor
+func (s *SlackMonitor) String() string {
+	return "Slack Monitor"
 }
 
 // Channel returns the name of the Slack channel which we monitor
-func (s *SlackClient) Channel() string {
+func (s *SlackMonitor) Channel() string {
 	return s.channel
 }
 
 // User returns slack user name whose message we monitor
-func (s *SlackClient) User() string {
+func (s *SlackMonitor) User() string {
 	return s.user
 }
 
 // watchMessages listens to Slack messages and notifies alertify bot when a message regexp is matched
-func (s *SlackClient) watchMessages(alertChan chan struct{}, errChan chan error) {
+func (s *SlackMonitor) watchMessages(alertChan chan struct{}, errChan chan error) {
 	// monitor all slack messages
 	for msg := range s.rtm.IncomingEvents {
 		switch ev := msg.Data.(type) {
@@ -98,8 +104,8 @@ func (s *SlackClient) watchMessages(alertChan chan struct{}, errChan chan error)
 	}
 }
 
-// ListenAndAlert monitors channel and notifies alertify Bot when the preconfigured message regexp is matched
-func (s *SlackClient) ListenAndAlert(msgChan chan<- *Msg) error {
+// MonitorAndAlert monitors channel and notifies alertify Bot when the preconfigured message regexp is matched
+func (s *SlackMonitor) MonitorAndAlert(msgChan chan<- *alertify.Msg) error {
 	// start RTM connection
 	go s.rtm.ManageConnection()
 	// slack message notification channel
@@ -113,6 +119,7 @@ func (s *SlackClient) ListenAndAlert(msgChan chan<- *Msg) error {
 	respChan := make(chan interface{})
 
 	for {
+		// check if the slack monitor is running
 		s.Lock()
 		s.isRunning = true
 		s.Unlock()
@@ -120,12 +127,11 @@ func (s *SlackClient) ListenAndAlert(msgChan chan<- *Msg) error {
 		case <-alertChan:
 			log.Printf("Slack alert message match detected!")
 			// send message to alertify bot to play song
-			go func() { msgChan <- &Msg{"alert", nil, respChan} }()
+			go func() { msgChan <- &alertify.Msg{"alert", nil, respChan} }()
 			if err := <-respChan; err != nil {
 				log.Printf("Could not play song: %v", err.(error))
 			}
 		case <-s.doneChan:
-			log.Printf("Shutting down Slack message listener")
 			// disconnect from RTM API
 			return s.rtm.Disconnect()
 		case err := <-errChan:
@@ -135,7 +141,7 @@ func (s *SlackClient) ListenAndAlert(msgChan chan<- *Msg) error {
 }
 
 // Stop stops Slack event watched
-func (s *SlackClient) Stop() {
+func (s *SlackMonitor) Stop() {
 	s.Lock()
 	defer s.Unlock()
 
