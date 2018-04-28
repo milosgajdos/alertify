@@ -18,7 +18,7 @@ type API struct {
 
 // Context provides API service context
 type Context struct {
-	cmdChan chan *Msg
+	msgChan chan *Msg
 }
 
 // newListener creates a new TCP listener

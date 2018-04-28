@@ -188,7 +188,7 @@ func (s *SpotifyClient) SetDevice(deviceID, deviceName string) error {
 func (s *SpotifyClient) PlaySong(songURI string) error {
 	s.Lock()
 	defer s.Unlock()
-	// if empty, play default song: car crash
+	// if empty, play default song
 	if songURI == "" {
 		songURI = "spotify:track:7yTIKQzqRQfXDKKiPw3GJY"
 	}
@@ -224,7 +224,7 @@ func (s *SpotifyClient) Pause() error {
 		DeviceID: &s.device.ID,
 	}
 
-	log.Printf("Attempting to silence alert  playback on device: %s - %s", s.device.ID, s.device.Name)
+	log.Printf("Attempting to silence alert song playback on device: %s - %s", s.device.ID, s.device.Name)
 
 	return s.PauseOpt(opts)
 }

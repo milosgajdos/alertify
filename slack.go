@@ -5,6 +5,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/nlopes/slack"
 )
@@ -13,12 +14,12 @@ import (
 type SlackConfig struct {
 	// APIKey is Slack API key
 	APIKey string
-	// AlertBot is the name of Slack alert bot
-	AlertBot string
-	// AlertChannel is the name of Slack channel that receives alerts
-	AlertChannel string
-	// AlertMsg is the message we are matching for
-	AlertMsg string
+	// Channel is the name of Slack channel
+	Channel string
+	// User is the name of Slack user
+	User string
+	// Msg is the message we are matching for
+	Msg string
 }
 
 // SlackClient is Slack API client
@@ -27,40 +28,48 @@ type SlackClient struct {
 	*slack.Client
 	// rtm is Slack RTM client
 	rtm *slack.RTM
-	// alertBot is Slack bot name
-	alertBot string
-	// alertChannel is Slack channel
-	alertChannel string
-	// alertMessage is RegExp we are matching for
-	alertMsg *regexp.Regexp
+	// user is Slack bot name
+	user string
+	// channel is Slack channel
+	channel string
+	// msg is RegExp we are matching for
+	msg *regexp.Regexp
 	// doneChan stops Slack client
 	doneChan chan struct{}
+	// isRunning checks if bot is running
+	isRunning bool
+	// mutex
+	*sync.Mutex
 }
 
-// NewSlackClient creates new Slack client and returns it
-func NewSlackClient(c *SlackConfig) (*SlackClient, error) {
+// NewSlackListener creates new Slack message listener.
+func NewSlackListener(c *SlackConfig) (*SlackClient, error) {
 	api := slack.New(c.APIKey)
 	rtm := api.NewRTM()
-	alertMsg, err := regexp.Compile(c.AlertMsg)
+	// compile message regexp
+	msg, err := regexp.Compile(c.Msg)
 	if err != nil {
 		return nil, err
 	}
+	// create notification channel
 	doneChan := make(chan struct{})
+	// mutex
+	m := &sync.Mutex{}
 
-	return &SlackClient{api, rtm, c.AlertBot, c.AlertChannel, alertMsg, doneChan}, nil
+	return &SlackClient{api, rtm, c.User, c.Channel, msg, doneChan, false, m}, nil
 }
 
-// AlertChannel returns the name of Slack channel that receives alerts
-func (s *SlackClient) AlertChannel() string {
-	return s.alertChannel
+// Channel returns the name of the Slack channel which we monitor
+func (s *SlackClient) Channel() string {
+	return s.channel
 }
 
-// AlertBot returns slack alert bot name to which alertify listens
-func (s *SlackClient) AlertBot() string {
-	return s.alertBot
+// User returns slack user name whose message we monitor
+func (s *SlackClient) User() string {
+	return s.user
 }
 
-// watchMessages watches Slack messages and notifies alertify when alerts is detected
+// watchMessages listens to Slack messages and notifies alertify bot when a message regexp is matched
 func (s *SlackClient) watchMessages(alertChan chan struct{}, errChan chan error) {
 	// monitor all slack messages
 	for msg := range s.rtm.IncomingEvents {
@@ -68,8 +77,8 @@ func (s *SlackClient) watchMessages(alertChan chan struct{}, errChan chan error)
 		case *slack.MessageEvent:
 			// if alertbot said something, send alert
 			user := s.rtm.GetInfo().User.Name
-			if strings.EqualFold(user, s.alertBot) {
-				if s.alertMsg.MatchString(ev.Text) {
+			if strings.EqualFold(user, s.user) {
+				if s.msg.MatchString(ev.Text) {
 					alertChan <- struct{}{}
 				}
 			}
@@ -89,8 +98,8 @@ func (s *SlackClient) watchMessages(alertChan chan struct{}, errChan chan error)
 	}
 }
 
-// WatchAndAlert watches alert channel and notifies alertify Bot which plays music
-func (s *SlackClient) WatchAndAlert(cmdChan chan *Msg) error {
+// ListenAndAlert monitors channel and notifies alertify Bot when the preconfigured message regexp is matched
+func (s *SlackClient) ListenAndAlert(msgChan chan<- *Msg) error {
 	// start RTM connection
 	go s.rtm.ManageConnection()
 	// slack message notification channel
@@ -104,18 +113,20 @@ func (s *SlackClient) WatchAndAlert(cmdChan chan *Msg) error {
 	respChan := make(chan interface{})
 
 	for {
+		s.Lock()
+		s.isRunning = true
+		s.Unlock()
 		select {
 		case <-alertChan:
-			log.Printf("Slack alert detected")
+			log.Printf("Slack alert message match detected!")
 			// send message to alertify bot to play song
-			go func() { cmdChan <- &Msg{"alert", nil, respChan} }()
+			go func() { msgChan <- &Msg{"alert", nil, respChan} }()
 			if err := <-respChan; err != nil {
 				log.Printf("Could not play song: %v", err.(error))
 			}
 		case <-s.doneChan:
-			log.Printf("Shutting down slack listener")
-			// close IncomingEvents channel
-			close(s.rtm.IncomingEvents)
+			log.Printf("Shutting down Slack message listener")
+			// disconnect from RTM API
 			return s.rtm.Disconnect()
 		case err := <-errChan:
 			return err
@@ -125,7 +136,12 @@ func (s *SlackClient) WatchAndAlert(cmdChan chan *Msg) error {
 
 // Stop stops Slack event watched
 func (s *SlackClient) Stop() {
-	close(s.doneChan)
+	s.Lock()
+	defer s.Unlock()
 
+	if s.isRunning {
+		close(s.doneChan)
+		s.isRunning = false
+	}
 	return
 }

@@ -3,99 +3,104 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 )
 
-// Bot wraps Spotify and Slack clients
-// and offers a simple API to interact with it
-type Bot struct {
-	// sptf is Spotify client
-	sptf *SpotifyClient
-	// slck ic Slack API client
-	slck *SlackClient
-	// api is HTTP API service
-	api *API
-	// alertSongURI is Spotify song URI
-	alertSongURI string
-	// cmdChan is Bot command control channel
-	cmdChan chan *Msg
-	// doneChan stops Bot command listener
-	doneChan chan struct{}
-}
-
-// Config contains alertify bot configuration
-type Config struct {
-	// Spotify contains Spotify API configu
-	Spotify *SpotifyConfig
-	// Slack contains Slack API config
-	Slack *SlackConfig
-}
-
-// Msg is a Bot message that allows to control aleritfy bot
+// Msg is allows to control aleritfy bot behavior
 type Msg struct {
-	Cmd      string
-	Data     interface{}
+	// Cmd is specifies command name
+	Cmd string
+	// Data allows to send data in the message
+	Data interface{}
+	// respChan is used to send response back to sender
 	respChan chan interface{}
 }
 
+// Bot plays spotify songs when requested
+type Bot struct {
+	// spotify is Spotify client
+	spotify *SpotifyClient
+	// api is HTTP API service
+	api *API
+	// songURI is Spotify song URI
+	songURI string
+	// msgChan allows to send command messages to Bot
+	msgChan chan *Msg
+	// closeMsgChan stops Bot message listener
+	closeMsgChan chan struct{}
+	// isRunning checks if bot is running
+	isRunning bool
+	// mutex
+	*sync.Mutex
+}
+
+// BotConfig configures alertify bot
+type BotConfig struct {
+	// Spotify configures Spotify API client
+	Spotify *SpotifyConfig
+}
+
 // NewBot creates new alertify bot and returns it
-func NewBot(c *Config) (*Bot, error) {
+// It fails with error if neither of the following couldnt be created:
+// Spotify API client, Slack API client, HTTP API service
+func NewBot(c *BotConfig) (*Bot, error) {
 	// Create Spotify client and set Spotify Device ID
 	spotifyClient, err := NewSpotifyClient(c.Spotify)
 	if err != nil {
 		return nil, err
 	}
-	// Create Slack client
-	slackClient, err := NewSlackClient(c.Slack)
-	if err != nil {
-		return nil, err
-	}
-	// create command channel
-	cmdChan := make(chan *Msg)
-	doneChan := make(chan struct{})
-	ctx := &Context{cmdChan}
-	api, err := NewAPI(ctx, ":8080", nil)
+	// create message channel
+	msgChan := make(chan *Msg)
+	// create close message channel
+	closeMsgChan := make(chan struct{})
+	// Create HTTP API
+	api, err := NewAPI(&Context{msgChan}, ":8080", nil)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Bot{
-		sptf:         spotifyClient,
-		slck:         slackClient,
+		spotify:      spotifyClient,
 		api:          api,
-		alertSongURI: c.Spotify.SongURI,
-		cmdChan:      cmdChan,
-		doneChan:     doneChan,
+		songURI:      c.Spotify.SongURI,
+		msgChan:      msgChan,
+		closeMsgChan: closeMsgChan,
+		isRunning:    false,
+		Mutex:        &sync.Mutex{},
 	}, nil
 }
 
-// Alert plays a Spotify song
-func (b *Bot) Alert(msg *Msg) error {
-	if msg.Data == nil {
-		return b.sptf.PlaySong(b.alertSongURI)
+// Alert plays songURI song on Spotify
+func (b *Bot) Alert(songURI string) error {
+	if songURI == "" {
+		songURI = b.songURI
 	}
-
-	songURI, ok := msg.Data.(string)
-	if !ok {
-		return fmt.Errorf("Invalid Spotify SongURI: %s", msg.Data)
-	}
-
-	return b.sptf.PlaySong(songURI)
+	return b.spotify.PlaySong(songURI)
 }
 
 // Silence pauses Spotify playback
 func (b *Bot) Silence() error {
-	return b.sptf.Pause()
+	return b.spotify.Pause()
 }
 
-// runCmd runs bot command
-func (b *Bot) runCmd(msg *Msg) {
+// MsgChan returns Bot message channel
+func (b *Bot) MsgChan() chan<- *Msg {
+	return b.msgChan
+}
+
+// processMsg processes bot message and runs bot command
+func (b *Bot) processMsg(msg *Msg) {
 	switch msg.Cmd {
 	case "alert":
-		msg.respChan <- b.Alert(msg)
+		var songURI string
+		var ok bool
+		if msg.Data != nil {
+			songURI, ok = msg.Data.(string)
+			if !ok {
+				songURI = b.songURI
+			}
+		}
+		msg.respChan <- b.Alert(songURI)
 	case "silence":
 		msg.respChan <- b.Silence()
 	default:
@@ -103,67 +108,64 @@ func (b *Bot) runCmd(msg *Msg) {
 	}
 }
 
-// Start starts alertify bot
-func (b *Bot) Start() error {
-	// TODO: connects to Slack channel and listens for events
-	// This should launch Slack.ListenAndAlert()
-	var err error
+// ListenAndAlert starts Bot message listener and plays Spotify song when it receives alert message
+// This is a blocking function call and therefore should be run in a dedicated goroutine
+func (b *Bot) ListenAndAlert() error {
 	var wg sync.WaitGroup
-
 	// Create error channel
-	errChan := make(chan error, 3)
+	errChan := make(chan error, 2)
 
-	// Signal handler to stop the framework scheduler and API
-	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc, os.Interrupt, os.Kill, syscall.SIGTERM)
-
-	// start Bot command listener
+	// Start Bot message listener
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Printf("Starting bot command listener")
 		for {
 			select {
-			case msg := <-b.cmdChan:
-				log.Printf("Received command: %s", msg.Cmd)
-				b.runCmd(msg)
-			case <-b.doneChan:
-				log.Printf("Shutting down bot")
+			case msg := <-b.msgChan:
+				log.Printf("Received message: %s", msg.Cmd)
+				b.processMsg(msg)
+			case <-b.closeMsgChan:
+				log.Printf("Stopping bot message listener")
+				errChan <- nil
 				return
 			}
 		}
 	}()
 
-	// Start API service
+	// Start Bot HTTP API service
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Printf("Starting HTTP API service")
+		log.Printf("Starting Bot HTTP API service")
 		errChan <- b.api.ListenAndServe()
 	}()
 
-	// start Slack API listener
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		log.Printf("Starting Slack API message watcher")
-		errChan <- b.slck.WatchAndAlert(b.cmdChan)
-	}()
+	// set bot status to running
+	b.Lock()
+	b.isRunning = true
+	b.Unlock()
 
-	select {
-	case sig := <-sigc:
-		log.Printf("Shutting down -> got signal: %s", sig)
-	case err = <-errChan:
-		log.Printf("Bot error: %s", err)
-	}
+	// wait for error
+	err := <-errChan
 
-	log.Printf("Stopping HTTP API service")
+	log.Printf("Bot HTTP API service shutting down")
 	b.api.l.Close()
-	log.Printf("Stopping Slack API message watcher")
-	b.slck.Stop()
-	log.Printf("Stopping Bot command listener")
-	close(b.doneChan)
+	log.Printf("Bot message listener shutting down")
+	b.Stop()
 	wg.Wait()
 
 	return err
+}
+
+// Stop stops bot listener
+func (b *Bot) Stop() {
+	b.Lock()
+	defer b.Unlock()
+
+	if b.isRunning {
+		close(b.closeMsgChan)
+		b.isRunning = false
+	}
+
+	return
 }

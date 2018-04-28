@@ -3,12 +3,17 @@ package main
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/mux"
 )
 
-// APIVERSION specifies API version
-const APIVERSION = "v1"
+const (
+	// APIVERSION specifies API version
+	APIVERSION = "v1"
+	// Timeout is bot response timeout
+	Timeout = 3 * time.Second
+)
 
 type handler func(c *Context, w http.ResponseWriter, r *http.Request)
 
@@ -48,28 +53,60 @@ func newRouter(c *Context) *mux.Router {
 
 func alertPlay(c *Context, w http.ResponseWriter, r *http.Request) {
 	respChan := make(chan interface{})
+	// ticker timeout
+	ticker := time.NewTicker(Timeout)
+	defer ticker.Stop()
+
 	go func() {
-		c.cmdChan <- &Msg{"alert", nil, respChan}
+		c.msgChan <- &Msg{"alert", nil, respChan}
 	}()
-	if err := <-respChan; err != nil {
+
+	// wait for Timeout seconds
+	select {
+	case <-ticker.C:
+		log.Printf("Alert trigger timed out")
 		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusGatewayTimeout)
 		return
+	case err := <-respChan:
+		if err != nil {
+			log.Printf("Failed to trigger alert: %s", err)
+			w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 	}
+
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
 }
 
 func alertSilence(c *Context, w http.ResponseWriter, r *http.Request) {
 	respChan := make(chan interface{})
+	// ticker timeout
+	ticker := time.NewTicker(Timeout)
+	defer ticker.Stop()
+
 	go func() {
-		c.cmdChan <- &Msg{"silence", nil, respChan}
+		c.msgChan <- &Msg{"silence", nil, respChan}
 	}()
-	if err := <-respChan; err != nil {
+
+	// wait for Timeout seconds
+	select {
+	case <-ticker.C:
+		log.Printf("Alert silence timed out")
 		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusGatewayTimeout)
 		return
+	case err := <-respChan:
+		if err != nil {
+			log.Printf("Failed to silence alert: %s", err)
+			w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 	}
+
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
 }

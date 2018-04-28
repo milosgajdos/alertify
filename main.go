@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 )
 
 const (
@@ -21,12 +24,12 @@ var (
 	deviceID string
 	// songURI is Spotify song URI
 	songURI string
-	// alertChannel is name of the Slack channel that receives alerts
-	alertChannel string
-	// alertBot is name of the Slack bot which posts alerts to alertChannel
-	alertBot string
-	// alertMsg is a string representing regular expression we are mathing on
-	alertMsg string
+	// slackChannel is name of the Slack channel that receives alerts
+	slackChannel string
+	// slackUser is name of the Slack bot which posts alerts to slackChannel
+	slackUser string
+	// slackMsg is a string representing regular expression we are matching on
+	slackMsg string
 )
 
 func init() {
@@ -34,15 +37,23 @@ func init() {
 	flag.StringVar(&deviceName, "device-name", "", "Spotify device name as recognised by Spotify API")
 	flag.StringVar(&deviceID, "device-id", "", "Spotify device ID as recognised by Spotify API")
 	flag.StringVar(&songURI, "song-uri", "spotify:track:2xYlyywNgefLCRDG8hlxZq", "Spotify song URI")
-	flag.StringVar(&alertChannel, "alert-channel", "devops-production", "Slack channel that receives alerts")
-	flag.StringVar(&alertBot, "alert-bot", "production", "Slack bot which sends alerts")
-	flag.StringVar(&alertMsg, "alert-msg", "alert", "Slack message regexp we are matching the alert messages on")
+	flag.StringVar(&slackChannel, "slack-channel", "devops-production", "Slack channel that receives alerts")
+	flag.StringVar(&slackUser, "slack-user", "production", "Slack username whose message we alert on")
+	flag.StringVar(&slackMsg, "slack-msg", "alert", "A regexp we are matching the slack messages on")
 	// disable timestamps and set prefix
 	log.SetFlags(0)
 	log.SetPrefix("[ " + cliname + " ] ")
 }
 
-func parseConfigFlags() (*Config, error) {
+// Config contains configuration parameters
+type Config struct {
+	// Bot configures alertify bot
+	Bot *BotConfig
+	// Slack configures Slack API client
+	Slack *SlackConfig
+}
+
+func parseCliFlags() (*Config, error) {
 	// parse flags
 	flag.Parse()
 
@@ -62,39 +73,88 @@ func parseConfigFlags() (*Config, error) {
 	}
 
 	return &Config{
-		Spotify: &SpotifyConfig{
-			ClientID:     spotifyID,
-			ClientSecret: spotifySecret,
-			RedirectURI:  redirectURI,
-			DeviceName:   deviceName,
-			DeviceID:     deviceID,
-			SongURI:      songURI,
+		Bot: &BotConfig{
+			Spotify: &SpotifyConfig{
+				ClientID:     spotifyID,
+				ClientSecret: spotifySecret,
+				RedirectURI:  redirectURI,
+				DeviceName:   deviceName,
+				DeviceID:     deviceID,
+				SongURI:      songURI,
+			},
 		},
 		Slack: &SlackConfig{
-			APIKey:       slackAPIKey,
-			AlertBot:     alertBot,
-			AlertChannel: alertChannel,
-			AlertMsg:     alertMsg,
+			APIKey:  slackAPIKey,
+			Channel: slackChannel,
+			User:    slackUser,
+			Msg:     slackMsg,
 		},
 	}, nil
 }
 
 func main() {
+	var wg sync.WaitGroup
+
 	// read config
-	c, err := parseConfigFlags()
+	cfg, err := parseCliFlags()
 	if err != nil {
 		log.Printf("Error parsing cli flags: %v", err)
 		os.Exit(1)
 	}
+
 	// create bot
-	bot, err := NewBot(c)
+	bot, err := NewBot(cfg.Bot)
 	if err != nil {
 		log.Printf("Error creating bot: %v", err)
 		os.Exit(1)
 	}
-	// start alertify bot
-	if err := bot.Start(); err != nil {
-		log.Println(err)
+
+	// Signal handler to stop the bot when termination signal is received
+	sigc := make(chan os.Signal, 1)
+	// register signal handler
+	signal.Notify(sigc, os.Interrupt, os.Kill, syscall.SIGTERM)
+	// Create error channel
+	errChan := make(chan error, 2)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		log.Printf("Starting bot message listener")
+		errChan <- bot.ListenAndAlert()
+		log.Printf("Bot message listener stopped")
+	}()
+
+	// Create Slack client
+	slack, err := NewSlackListener(cfg.Slack)
+	if err != nil {
+		log.Printf("Error creating slack listener: %s", err)
+		os.Exit(1)
+	}
+
+	// start Slack API message listener
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		log.Printf("Starting Slack API message listener")
+		errChan <- slack.ListenAndAlert(bot.MsgChan())
+		log.Printf("Slack message listener stopped")
+	}()
+
+	var e error
+	select {
+	case sig := <-sigc:
+		log.Printf("Shutting down -> got signal: %s", sig)
+	case e = <-errChan:
+	}
+
+	// stop all listeners
+	bot.Stop()
+	slack.Stop()
+	wg.Wait()
+
+	// if we are shutting down due to an error, exit with non-zero status
+	if err != nil {
+		log.Printf("Error: %s", e)
 		os.Exit(1)
 	}
 }
