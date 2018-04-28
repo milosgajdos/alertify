@@ -1,4 +1,4 @@
-package main
+package alertify
 
 import (
 	"fmt"
@@ -121,9 +121,12 @@ func NewSpotifyClient(c *SpotifyConfig) (*SpotifyClient, error) {
 	case client = <-clientChan:
 		listener.Close()
 	case err = <-errChan:
-		log.Printf("Error stopping Spotify authenticator: %s", err)
 	}
 	wg.Wait()
+
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create Spotify client: %s", err)
+	}
 
 	// configure Spotify player device
 	deviceID := spotify.ID(c.DeviceID)
@@ -188,7 +191,7 @@ func (s *SpotifyClient) SetDevice(deviceID, deviceName string) error {
 func (s *SpotifyClient) PlaySong(songURI string) error {
 	s.Lock()
 	defer s.Unlock()
-	// if empty, play default song: car crash
+	// if empty, play default song
 	if songURI == "" {
 		songURI = "spotify:track:7yTIKQzqRQfXDKKiPw3GJY"
 	}
@@ -212,7 +215,7 @@ func (s *SpotifyClient) PlaySong(songURI string) error {
 		}
 	}
 
-	log.Printf("Attempting to play: %s on device: %s - %s", trackName, s.device.ID, s.device.Name)
+	log.Printf("Attempting to play: \"%s\" on Device ID: %s Name: %s", trackName, s.device.ID, s.device.Name)
 
 	return s.PlayOpt(opts)
 }
@@ -224,7 +227,7 @@ func (s *SpotifyClient) Pause() error {
 		DeviceID: &s.device.ID,
 	}
 
-	log.Printf("Attempting to silence alert  playback on device: %s - %s", s.device.ID, s.device.Name)
+	log.Printf("Attempting to pause alert playback on Device ID: %s Name: %s", s.device.ID, s.device.Name)
 
 	return s.PauseOpt(opts)
 }

@@ -27,9 +27,7 @@ _testmain.go
 # ignore go build and test outputs
 coverage.txt
 coverage.out
-alertify
 
 # ignore HTML files produced by gopfield
 *.html
 vendor/
-.local
