@@ -127,7 +127,13 @@ func (s *SlackMonitor) MonitorAndAlert(msgChan chan<- *alertify.Msg) error {
 		case <-alertChan:
 			log.Printf("Slack alert message match detected!")
 			// send message to alertify bot to play song
-			go func() { msgChan <- &alertify.Msg{"alert", nil, respChan} }()
+			go func() {
+				msgChan <- &alertify.Msg{
+					Cmd:  "alert",
+					Data: nil,
+					Resp: respChan,
+				}
+			}()
 			if err := <-respChan; err != nil {
 				log.Printf("Could not play song: %v", err.(error))
 			}

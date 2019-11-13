@@ -2,7 +2,7 @@ BUILD=go build
 CLEAN=go clean
 INSTALL=go install
 BUILDPATH=./_build
-PACKAGES=$(shell go list ./... |grep -v vendor/)
+PACKAGES=$(shell go list ./... | grep -v /examples/)
 EXAMPLES=$(shell find examples/* -maxdepth 0 -type d -exec basename {} \;)
 
 examples: builddir
@@ -10,7 +10,7 @@ examples: builddir
 		go build -o "$(BUILDPATH)/$$example" "examples/$$example/$$example.go"; \
 	done
 
-all: examples
+all: dep check test examples
 
 slackertify: builddir
 	go build -o "$(BUILDPATH)/slackertify" "examples/slackertify/slackertify.go"
@@ -23,19 +23,12 @@ install:
 
 clean:
 	rm -rf $(BUILDPATH)
-	$(CLEAN)
 
-godep:
-	go get -u github.com/golang/dep/cmd/dep
-
-dep: godep
-	dep ensure
+dep:
+	go get ./...
 
 check:
-	for pkg in ${PACKAGES}; do \
-		go vet -composites=false $$pkg || exit ; \
-		golint $$pkg || exit ; \
-	done
+	go vet ./...
 
 test:
 	for pkg in ${PACKAGES}; do \

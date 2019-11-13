@@ -1,18 +1,13 @@
 language: go
 go:
-  - "1.9"
-  - "1.10"
-
+  - "1.12"
+  - "1.13"
+env:
+  - GO111MODULE=on
 before_install:
-  - go get github.com/stretchr/testify/assert
-  - go get github.com/golang/lint/golint
-
-install:
-  - go get -d -v ./... && go build -v ./...
+  - go get golang.org/x/lint/golint
 
 script:
-  - make dep
-  - make check
   - make all
 
 after_success:
