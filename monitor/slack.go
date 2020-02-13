@@ -97,7 +97,7 @@ func (s *SlackMonitor) watchMessages(alertChan chan struct{}, errChan chan error
 			errChan <- fmt.Errorf(ev.Error())
 
 		case *slack.InvalidAuthEvent:
-			errChan <- fmt.Errorf("Invalid Slack API credentials")
+			errChan <- fmt.Errorf("invalid Slack API credentials")
 
 		default:
 		}

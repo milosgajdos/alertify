@@ -113,7 +113,7 @@ func (b *Bot) processMsg(msg *Msg) {
 	case "silence":
 		msg.Resp <- b.Silence()
 	default:
-		msg.Resp <- fmt.Errorf("Invalid command")
+		msg.Resp <- fmt.Errorf("invalid command")
 	}
 }
 

@@ -62,17 +62,17 @@ func parseCliFlags() (*Config, error) {
 
 	spotifyID := os.Getenv("SPOTIFY_ID")
 	if spotifyID == "" {
-		return nil, fmt.Errorf("Could not read SPOTIFY_ID environment variable")
+		return nil, fmt.Errorf("could not read SPOTIFY_ID environment variable")
 	}
 
 	spotifySecret := os.Getenv("SPOTIFY_SECRET")
 	if spotifySecret == "" {
-		return nil, fmt.Errorf("Could not read SPOTIFY_SECRET environment variable")
+		return nil, fmt.Errorf("could not read SPOTIFY_SECRET environment variable")
 	}
 
 	slackAPIKey := os.Getenv("SLACK_API_KEY")
 	if slackAPIKey == "" {
-		return nil, fmt.Errorf("Could not read SLACK_API_KEY environment variable")
+		return nil, fmt.Errorf("could not read SLACK_API_KEY environment variable")
 	}
 
 	return &Config{

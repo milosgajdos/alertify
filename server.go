@@ -38,7 +38,7 @@ func newListener(proto, addr string, tlsConfig *tls.Config) (net.Listener, error
 	case "tcp":
 		l, err = net.Listen(proto, addr)
 	default:
-		return nil, fmt.Errorf("Unsupported protocol: %q", proto)
+		return nil, fmt.Errorf("unsupported protocol: %q", proto)
 	}
 
 	if tlsConfig != nil {

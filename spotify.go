@@ -94,7 +94,7 @@ func NewSpotifyClient(c *SpotifyConfig) (*SpotifyClient, error) {
 	// create OAuth listener for RedirectURI callback
 	listener, err := net.Listen("tcp", "localhost:8080")
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create TCP listener: %s", err)
+		return nil, fmt.Errorf("failed to create TCP listener: %s", err)
 	}
 	// Spotify authenticator
 	auth := NewSpotifyAuth(c.ClientID, c.ClientSecret, c.RedirectURI, "abc123")
@@ -127,7 +127,7 @@ func NewSpotifyClient(c *SpotifyConfig) (*SpotifyClient, error) {
 	wg.Wait()
 
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create Spotify client: %s", err)
+		return nil, fmt.Errorf("failed to create Spotify client: %s", err)
 	}
 
 	// configure Spotify player device
@@ -186,7 +186,7 @@ func (s *SpotifyClient) SetDevice(deviceID, deviceName string) error {
 		return nil
 	}
 
-	return fmt.Errorf("No active Spotify devices found")
+	return fmt.Errorf("no active Spotify devices found")
 }
 
 // PlaySong plays Spotify song passed in as songURI
