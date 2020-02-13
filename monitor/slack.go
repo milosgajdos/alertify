@@ -155,5 +155,4 @@ func (s *SlackMonitor) Stop() {
 		close(s.doneChan)
 		s.isRunning = false
 	}
-	return
 }

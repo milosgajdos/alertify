@@ -170,7 +170,9 @@ func (b *Bot) ListenAndAlert() error {
 	err := <-errChan
 
 	log.Printf("HTTP API service shutting down")
-	b.api.l.Close()
+	if err := b.api.l.Close(); err != nil {
+		log.Printf("Error shutting down API listener: %v", err)
+	}
 	log.Printf("HTTP API service stopped")
 
 	log.Printf("Message listener shutting down")
@@ -197,6 +199,4 @@ func (b *Bot) Stop() {
 		close(b.closeMsgChan)
 		b.isRunning = false
 	}
-
-	return
 }

@@ -119,7 +119,9 @@ func NewSpotifyClient(c *SpotifyConfig) (*SpotifyClient, error) {
 	// wait for auth to complete
 	select {
 	case client = <-clientChan:
-		listener.Close()
+		if err := listener.Close(); err != nil {
+			log.Printf("Error closing auth listener: %v", err)
+		}
 	case err = <-errChan:
 	}
 	wg.Wait()
