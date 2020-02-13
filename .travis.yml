@@ -11,3 +11,5 @@ script:
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)
+  - curl https://deepsource.io/cli | sh
+  - ./bin/deepsource report --analyzer go
