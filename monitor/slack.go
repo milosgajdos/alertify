@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/milosgajdos83/alertify"
+	"github.com/milosgajdos/alertify"
 	"github.com/nlopes/slack"
 )
 

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/milosgajdos83/alertify"
-	"github.com/milosgajdos83/alertify/monitor"
+	"github.com/milosgajdos/alertify"
+	"github.com/milosgajdos/alertify/monitor"
 )
 
 const (

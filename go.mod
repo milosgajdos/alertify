@@ -1,4 +1,4 @@
-module github.com/milosgajdos83/alertify
+module github.com/milosgajdos/alertify
 
 go 1.13
 

@@ -1,10 +1,10 @@
 # alertify
 
-[![GoDoc](https://godoc.org/github.com/milosgajdos83/alertify?status.svg)](https://godoc.org/github.com/milosgajdos83/alertify)
-[![Go Report Card](https://goreportcard.com/badge/milosgajdos83/alertify)](https://goreportcard.com/report/github.com/milosgajdos83/alertify)
+[![GoDoc](https://godoc.org/github.com/milosgajdos/alertify?status.svg)](https://godoc.org/github.com/milosgajdos/alertify)
+[![Go Report Card](https://goreportcard.com/badge/milosgajdos/alertify)](https://goreportcard.com/report/github.com/milosgajdos/alertify)
 [![License](https://img.shields.io/:license-apache-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Travis CI](https://travis-ci.org/milosgajdos83/alertify.svg?branch=master)](https://travis-ci.org/milosgajdos83/alertify)
-[![DeepSource](https://static.deepsource.io/deepsource-badge-light-mini.svg)](https://deepsource.io/gh/milosgajdos83/alertify/?ref=repository-badge)
+[![Travis CI](https://travis-ci.org/milosgajdos/alertify.svg?branch=master)](https://travis-ci.org/milosgajdos/alertify)
+[![DeepSource](https://static.deepsource.io/deepsource-badge-light-mini.svg)](https://deepsource.io/gh/milosgajdos/alertify/?ref=repository-badge)
 
 `alertify` is a simple `Go` package which allows to play a song on a [Spotify](https://www.spotify.com/uk/) device upon receiving alert message from a preconfigured source or via HTTP API request.
 
@@ -33,7 +33,7 @@ At the core of the package is `alertify.Bot` object, which is responsible for pl
 
 `alertify.Bot` is intended to run in a dedicated `goroutine` and when run on its own it does nothing unless being explicitly requested to play a song via its HTTP API. The API also provides an endpoint which allows to pause the song playback.
 
-Things get more interesting when you register some alert "monitors" with the `alertify.Bot`. The monitors are objects which satisfy `alertify.Monitor` interface and which can communicate with `alertify.Bot` by sending it `alertify.Msg` objects over the predefined `Go` channel. Please see the [Godoc](https://godoc.org/github.com/milosgajdos83/alertify) for implementation details.
+Things get more interesting when you register some alert "monitors" with the `alertify.Bot`. The monitors are objects which satisfy `alertify.Monitor` interface and which can communicate with `alertify.Bot` by sending it `alertify.Msg` objects over the predefined `Go` channel. Please see the [Godoc](https://godoc.org/github.com/milosgajdos/alertify) for implementation details.
 
 If I have more time I'll move the local in-process communication from `Go` channels to `protobufs` or provide `protobufs` communication interface as well,  but at this point I couldnt be bothered as it's just a fun side project and `Go channel` communication is easy to implement without any extra dependencies.
 
@@ -91,8 +91,8 @@ export SLACK_API_KEY="xxx"
 `go get` the project and ensure its dependencies are vendored:
 
 ```
-$ go get -u github.com/milosgajdos83/alertify
-$ cd $GOPATH/src/github.com/milosgajdos83/alertify && make dep
+$ go get -u github.com/milosgajdos/alertify
+$ cd $GOPATH/src/github.com/milosgajdos/alertify && make dep
 ```
 
 Build the `slackertify` binary:
