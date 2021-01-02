@@ -6,13 +6,13 @@
 [![License](https://img.shields.io/:license-apache-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![DeepSource](https://static.deepsource.io/deepsource-badge-light-mini.svg)](https://deepsource.io/gh/milosgajdos/alertify/?ref=repository-badge)
 
-`alertify` is a simple `Go` package which allows to play a song on a [Spotify](https://www.spotify.com/uk/) device upon receiving alert message from a preconfigured source or via HTTP API request.
+`alertify` is a simple `Go` package that allows to play a song on a [Spotify](https://www.spotify.com/uk/) device upon receiving alert message from a preconfigured source or via HTTP API request.
 
 The original goal of the project was to play a Spotify song when a critical infrastructure alert is detected in a dedicated Slack channel. The project has since evolved beyond this goal and now allows to plug in different monitoring sources.
 
 # Prerequisites
 
-`alertify` uses Spotify API therefore there is a couple of prerequisites which need to be satisfied before you can use it.
+`alertify` uses Spotify API therefore there is a couple of prerequisites that need to be satisfied before you can use it.
 
 ## Spotify API access
 
